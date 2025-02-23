@@ -4882,7 +4882,7 @@ void CClientManager::WeeklyRewards(CPeer * pkPeer, TWeeklyRewardsGD * p)
 int CClientManager::GetEmptyMallPosition(BYTE itemSize, DWORD accountID)
 {
 	char query[QUERY_MAX_LEN];
-	snprintf(query, sizeof(query), "SELECT `pos`, `vnum` FROM `srv1_player`.`item` WHERE `owner_id` = '%d' AND `window` = 'MALL'", accountID);
+	snprintf(query, sizeof(query), "SELECT `pos`, `vnum` FROM `srv2_player`.`item` WHERE `owner_id` = '%d' AND `window` = 'MALL'", accountID);
 	std::unique_ptr<SQLMsg> pkMsg(CDBManager::instance().DirectQuery(query));
 
 	if (pkMsg->Get()->uiNumRows == 0)
@@ -5012,7 +5012,7 @@ void CClientManager::QUERY_BATTLE_PASS_INFO_SAVE(CPeer * pkPeer, TBattlePassInfo
 
 #ifdef ENABLE_EVENT_MANAGER
 #include "buffer_manager.h"
-void SetTimeToString(TEventManagerData* eventData)
+void CClientManager::SetTimeToString(TEventManagerData* eventData)
 {
 	if (eventData->startTime <= 0)
 		snprintf(eventData->startTimeText, sizeof(eventData->startTimeText), "1970-01-01 00:00:00");
@@ -5032,7 +5032,7 @@ void SetTimeToString(TEventManagerData* eventData)
 		snprintf(eventData->endTimeText, sizeof(eventData->endTimeText), "%d-%02d-%02d %02d:%02d:%02d", vEventEndKey.tm_year + 1900, vEventEndKey.tm_mon + 1, vEventEndKey.tm_mday, vEventEndKey.tm_hour, vEventEndKey.tm_min, vEventEndKey.tm_sec);
 	}
 }
-bool IsDontHaveEndTimeEvent(BYTE eventIndex)
+bool CClientManager::IsDontHaveEndTimeEvent(BYTE eventIndex)
 {
 	switch (eventIndex)
 	{
@@ -5043,6 +5043,58 @@ bool IsDontHaveEndTimeEvent(BYTE eventIndex)
 	}
 	return false;
 }
+
+bool SortWithTime(const TEventManagerData& a, const TEventManagerData& b)
+{
+	return (a.startTime < b.startTime);
+}
+
+void CClientManager::AddEventManager(TEventManagerData* eventData)
+{
+    // Tablica do mapowania indeksu na nazwę eventu
+    const char* eventNames[] = {
+        "BONUS_EVENT",
+        "DOUBLE_BOSS_LOOT_EVENT",
+        "DOUBLE_METIN_LOOT_EVENT",
+        "DOUBLE_MISSION_BOOK_EVENT",
+        "DUNGEON_COOLDOWN_EVENT",
+        "DUNGEON_CHEST_LOOT_EVENT",
+        "EMPIRE_WAR_EVENT",
+        "MOONLIGHT_EVENT",
+        "TOURNAMENT_EVENT",
+        "WHELL_OF_FORTUNE_EVENT",
+        "HALLOWEEN_EVENT",
+        "NPC_SEARCH_EVENT",
+        "EXP_EVENT",
+        "ITEM_DROP_EVENT",
+        "YANG_DROP_EVENT"
+    };
+
+    // Sprawdź czy indeks jest prawidłowy
+    if (eventData->eventIndex < 1 || eventData->eventIndex > 15) {
+        sys_err("Invalid event index: %d", eventData->eventIndex);
+        return;
+    }
+
+    char szQuery[QUERY_MAX_LEN];
+    snprintf(szQuery, sizeof(szQuery),
+        "INSERT INTO event_manager "
+        "(eventIndex, startTime, endTime, empireFlag, channelFlag, value0, value1, value2, value3) "
+        "VALUES('%s', FROM_UNIXTIME(%ld), FROM_UNIXTIME(%ld), %d, %d, %d, %d, %d, %d)",
+        eventNames[eventData->eventIndex - 1],  // -1 bo indeksy zaczynają się od 1
+        eventData->startTime,
+        eventData->endTime,
+        eventData->empireFlag,
+        eventData->channelFlag,
+        eventData->value[0],
+        eventData->value[1],
+        eventData->value[2],
+        eventData->value[3]);
+
+    std::unique_ptr<SQLMsg> pmsg(CDBManager::instance().DirectQuery(szQuery));
+}
+
+/* Stary kod
 void CClientManager::RecvEventManagerPacket(const char* data)
 {
 	const BYTE subIndex = *(BYTE*)data;
@@ -5067,7 +5119,7 @@ void CClientManager::RecvEventManagerPacket(const char* data)
 						SetTimeToString(&eventPtr);
 						UpdateEventManager();
 						char szQuery[QUERY_MAX_LEN];
-						snprintf(szQuery, sizeof(szQuery), "UPDATE srv1_player.event_table SET endTime = NOW() WHERE id = %u", index);
+						snprintf(szQuery, sizeof(szQuery), "UPDATE srv2_player.event_table SET endTime = NOW() WHERE id = %u", index);
 						std::unique_ptr<SQLMsg> pMsg(CDBManager::instance().DirectQuery(szQuery, SQL_PLAYER));
 						return;
 					}
@@ -5076,6 +5128,137 @@ void CClientManager::RecvEventManagerPacket(const char* data)
 		}
 	}
 }
+*/ //Stary kod
+
+/////TESTTEST/////
+void CClientManager::RecvEventManagerPacket(const char* data)
+{
+    const BYTE subIndex = *(BYTE*)data;
+    data += sizeof(BYTE);
+
+    if (subIndex == EVENT_MANAGER_UPDATE)
+    {
+        InitializeEventManager(true);
+    }
+    else if (subIndex == EVENT_MANAGER_REMOVE_EVENT)
+    {
+        const WORD index = *(WORD*)data;
+        data += sizeof(WORD);
+
+        if (m_EventManager.size())
+        {
+            for (auto it = m_EventManager.begin(); it != m_EventManager.end(); ++it)
+            {
+                for (DWORD j = 0; j < it->second.size(); ++j)
+                {
+                    TEventManagerData& eventPtr = it->second[j];
+                    if (eventPtr.eventID == index)
+                    {
+                        eventPtr.endTime = time(0);
+                        SetTimeToString(&eventPtr);
+                        UpdateEventManager();
+                        char szQuery[QUERY_MAX_LEN];
+                        snprintf(szQuery, sizeof(szQuery), "UPDATE srv2_player.event_table SET endTime = NOW() WHERE id = %u", index);
+                        std::unique_ptr<SQLMsg> pMsg(CDBManager::instance().DirectQuery(szQuery, SQL_PLAYER));
+                        return;
+                    }
+                }
+            }
+        }
+    }
+		else if (subIndex == EVENT_MANAGER_LOAD)
+{
+    TEventManagerData eventData;
+    memcpy(&eventData, data, sizeof(TEventManagerData));
+
+    // Najpierw pobierz maksymalne ID z tabeli
+    char szQueryMaxId[QUERY_MAX_LEN];
+    snprintf(szQueryMaxId, sizeof(szQueryMaxId), 
+        "SELECT COALESCE(MAX(id), 0) FROM srv2_player.event_table");
+    
+    std::unique_ptr<SQLMsg> pMsgId(CDBManager::instance().DirectQuery(szQueryMaxId, SQL_PLAYER));
+    
+    DWORD nextId = 1; // Domyślnie zaczynamy od 1
+    if (pMsgId->Get()->uiNumRows > 0)
+    {
+        MYSQL_ROW row = mysql_fetch_row(pMsgId->Get()->pSQLResult);
+        if (row && row[0])
+        {
+            nextId = static_cast<DWORD>(strtoul(row[0], nullptr, 10) + 1);
+        }
+    }
+
+    // Tablica do mapowania indeksu na nazwę eventu
+    const char* eventNames[] = {
+        "BONUS_EVENT",
+        "DOUBLE_BOSS_LOOT_EVENT",
+        "DOUBLE_METIN_LOOT_EVENT",
+        "DOUBLE_MISSION_BOOK_EVENT",
+        "DUNGEON_COOLDOWN_EVENT",
+        "DUNGEON_CHEST_LOOT_EVENT",
+        "EMPIRE_WAR_EVENT",
+        "MOONLIGHT_EVENT",
+        "TOURNAMENT_EVENT",
+        "WHELL_OF_FORTUNE_EVENT",
+        "HALLOWEEN_EVENT",
+        "NPC_SEARCH_EVENT",
+        "EXP_EVENT",
+        "ITEM_DROP_EVENT",
+        "YANG_DROP_EVENT"
+    };
+
+    // Sprawdź czy indeks jest prawidłowy
+    if (eventData.eventIndex < 1 || eventData.eventIndex > 15) {
+        sys_err("Invalid event index: %d", eventData.eventIndex);
+        return;
+    }
+
+    char szQuery[QUERY_MAX_LEN];
+    snprintf(szQuery, sizeof(szQuery), 
+        "INSERT INTO srv2_player.event_table "
+        "(id, eventIndex, startTime, endTime, empireFlag, channelFlag, value0, value1, value2, value3) "
+        "VALUES (%u, '%s', FROM_UNIXTIME(%ld), FROM_UNIXTIME(%ld), %d, %d, %d, %d, %d, %d)",
+        nextId,
+        eventNames[eventData.eventIndex - 1],
+        eventData.startTime,
+        eventData.endTime,
+        eventData.empireFlag,
+        eventData.channelFlag,
+        eventData.value[0],
+        eventData.value[1],
+        eventData.value[2],
+        eventData.value[3]);
+
+    std::unique_ptr<SQLMsg> pMsg(CDBManager::instance().DirectQuery(szQuery, SQL_PLAYER));
+    
+    if (pMsg->Get()->uiAffectedRows)
+    {
+        // Ustawiamy wyliczone ID
+        eventData.eventID = nextId;
+        
+        // Dodajemy event do mapy
+        const time_t eventStartTime = eventData.startTime;
+        const struct tm vEventStartKey = *localtime(&eventStartTime);
+        
+        const auto it = m_EventManager.find(vEventStartKey.tm_mday);
+        if (it != m_EventManager.end())
+        {
+            it->second.emplace_back(eventData);
+            std::stable_sort(it->second.begin(), it->second.end(), SortWithTime);
+        }
+        else
+        {
+            std::vector<TEventManagerData> m_vec;
+            m_vec.emplace_back(eventData);
+            m_EventManager.emplace(vEventStartKey.tm_mday, m_vec);
+        }
+
+        // Aktualizujemy wszystkie serwery
+        InitializeEventManager(true);
+    }
+}
+}
+/////TESTTEST/////
 void CClientManager::UpdateEventManager()
 {
 	const time_t now = time(0);
@@ -5126,16 +5309,12 @@ void CClientManager::UpdateEventManager()
 	}
 }
 
-bool SortWithTime(const TEventManagerData& a, const TEventManagerData& b)
-{
-	return (a.startTime < b.startTime);
-}
 bool CClientManager::InitializeEventManager(bool updateFromGameMaster)
 {
 	m_EventManager.clear();
 
 	char szQuery[QUERY_MAX_LEN];
-	snprintf(szQuery, sizeof(szQuery), "SELECT id, eventIndex+0, UNIX_TIMESTAMP(startTime), UNIX_TIMESTAMP(endTime), empireFlag, channelFlag, value0, value1, value2, value3 FROM srv1_player.event_table");
+	snprintf(szQuery, sizeof(szQuery), "SELECT id, eventIndex+0, UNIX_TIMESTAMP(startTime), UNIX_TIMESTAMP(endTime), empireFlag, channelFlag, value0, value1, value2, value3 FROM srv2_player.event_table");
 	std::unique_ptr<SQLMsg> pMsg(CDBManager::instance().DirectQuery(szQuery, SQL_PLAYER));
 	if (pMsg->Get()->uiNumRows != 0)
 	{

@@ -214,6 +214,9 @@ public:
 	void		RecvEventManagerPacket(const char* data);
 	void		UpdateEventManager();
 	void		SendEventData(CPeer* pkPeer = NULL, bool updateFromGameMaster = false);
+	bool 		IsDontHaveEndTimeEvent(BYTE eventIndex);
+	void 		SetTimeToString(TEventManagerData* eventData);
+    void 		AddEventManager(TEventManagerData* eventData);
 protected:
 	std::map<BYTE, std::vector<TEventManagerData > > m_EventManager;
 #endif
