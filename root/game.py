@@ -62,6 +62,7 @@ if app.ENABLE_OFFLINE_SHOP_SYSTEM:
 if app.ENABLE_PREMIUM_PRIVATE_SHOP_OFFICIAL:
 	import uiPrivateShop
 
+import uieventmanager
 from _weakref import proxy
 
 # SCREENSHOT_CWDSAVE
@@ -462,7 +463,7 @@ class GameWindow(ui.ScriptWindow):
 		onPressKeyDict[app.DIK_LSHIFT]		= lambda : self.__SetQuickPageMode()
 		onPressKeyDict[app.DIK_TAB]			= lambda : self.interface.ToggleMapaSwWindow()
 
-		onPressKeyDict[app.DIK_J]			= lambda : self.__PressJKey()
+		#onPressKeyDict[app.DIK_J]			= lambda : self.OpenEventManager()
 		onPressKeyDict[app.DIK_H]			= lambda : self.__PressHKey()
 		onPressKeyDict[app.DIK_B]			= lambda : self.__PressBKey()
 		onPressKeyDict[app.DIK_F]			= lambda : self.__PressFKey()
@@ -512,7 +513,12 @@ class GameWindow(ui.ScriptWindow):
 			acce.SendRefineRequest()
 		elif constInfo.IS_DRAGON_SOUL_OPEN:
 			self.interface.wndDragonSoulRefine.PressDoRefineButton()
-
+	#EventManageTest
+	def OpenEventManager(self):
+		if self.eventManagerWindow is None:
+			self.eventManagerWindow = GMEventManager()
+		self.eventManagerWindow.Show()
+	#
 	def WyszukiwaraOpen(self):
 		self.wndShopSearchWindow.OpenWindow()
 

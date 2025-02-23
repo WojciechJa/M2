@@ -121,6 +121,7 @@ class ImageBoxSpecial(ui.ImageBox):
 		self.increaseValue = 0.05
 		self.minAlpha = 0.3
 		self.maxAlpha = 1.0
+		self.AddFlag("enable_pick")
 
 		if isMiniIcon:
 			self.AddFlag("attach")
@@ -131,6 +132,15 @@ class ImageBoxSpecial(ui.ImageBox):
 			self.SetEvent(ui.__mem_func__(self.OnClickEventIcon),"mouse_click")
 			self.SetMouseLeftButtonDoubleClickEvent(ui.__mem_func__(self.OnClickDouble))
 			self.SetMouseRightButtonDownEvent(ui.__mem_func__(self.NextEventWithKey))
+		else:
+			self.SetEvent(ui.__mem_func__(self.OnClickDay), "mouse_click")
+
+	def OnClickDay(self):
+		if self.parentWindow:
+			self.parentWindow.OnClick(self.dayIndex)
+
+	def SetParentWindow(self, window):
+		self.parentWindow = window
 
 	def OnMoveWindow(self, x, y):
 		(screenWidth, screenHeight) = (wndMgr.GetScreenWidth(), wndMgr.GetScreenHeight())
@@ -262,9 +272,11 @@ class EventCalendarWindow(ui.ScriptWindow):
 		self.children = {}
 		self.currentMonth =0
 		self.currentYear = 0
+		self.eventManageWindow = None  # TEST EVENTMANAGE
 	def __init__(self):
 		ui.ScriptWindow.__init__(self)
 		self.Destroy()
+		self.eventManageWindow = None  # TEST EVENTMANAGE
 		self.__LoadWindow()
 
 	def __LoadWindow(self):
@@ -299,6 +311,9 @@ class EventCalendarWindow(ui.ScriptWindow):
 				dayImages.SetBackgroundImage(IMG_DIR+"black_bg.png")
 			dayImages.SetPosition(8 + (xCalculate*66),8+(yCalculate*62))
 			dayImages.dayIndex = day+1
+			#TEST EVENTMANAGE
+			dayImages.SetEvent(ui.__mem_func__(self.OnDayClick), "mouse_click")
+			#TEST EVENTMANAGE
 			dayImages.Show()
 			self.children["dayImages%d"%day] = dayImages
 
@@ -311,6 +326,16 @@ class EventCalendarWindow(ui.ScriptWindow):
 		# self.SetCenterPosition()
 		
 		self.Refresh()
+
+	#TEST EVENTMANAGE
+	def OnDayClick(self):
+		if not hasattr(self, "eventManageWindow"):
+			self.eventManageWindow = EventManageWindow()
+
+		self.eventManageWindow.Open(self.dayIndex)
+		if server_event_data.has_key(self.dayIndex):
+			self.eventManageWindow.LoadEvents(server_event_data[self.dayIndex])
+
 
 	def Open(self):
 		self.Show()
@@ -354,10 +379,26 @@ class EventCalendarWindow(ui.ScriptWindow):
 					else:
 						dayEventImage.SetBackgroundImage(IMG_DIR+"black_bg.png")
 				dayEventImage.Show()
-	def OnClick(self, eventIndex):
-		# Set Here!
-		pass
+	#TEST EVENTMANAGE
+	def OnClick(self, dayIndex):
+		import chr
+		if not chr.IsGameMaster(player.GetMainCharacterIndex()):
+			chat.AppendChat(chat.CHAT_TYPE_INFO, localeInfo.NOT_GM_PERMISSION)
+			return
 
+		if not hasattr(self, "eventManageWindow") or not self.eventManageWindow:
+			try:
+				import uieventmanager
+				self.eventManageWindow = uieventmanager.EventManageWindow()
+			except:
+				import exception
+				exception.Abort("EventCalendarWindow.CreateEventManageWindow")
+
+		if self.eventManageWindow:
+			self.eventManageWindow.Open(dayIndex)
+			if server_event_data.has_key(dayIndex):
+				self.eventManageWindow.LoadEvents(server_event_data[dayIndex])
+	#TEST EVENTMANAGE
 	def __GetBonusName(self, affect, value):
 		return ItemToolTip.AFFECT_DICT[affect](value)
 
@@ -603,4 +644,7 @@ class MovableImage(ImageBoxSpecial):
 			elif timeData[2] == 2:
 				if self.timeText.IsShow():
 					self.timeText.Hide()
+					
+					
+
 
